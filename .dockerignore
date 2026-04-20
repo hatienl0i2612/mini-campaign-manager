@@ -1,0 +1,14 @@
+node_modules
+dist
+.nx
+.git
+.vscode
+.DS_Store
+*.md
+.env
+.env.*
+coverage
+tmp
+temp
+.claude
+.gemini

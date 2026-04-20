@@ -1,0 +1,103 @@
+services:
+    db:
+        image: postgres:16-alpine
+        container_name: campaign-db
+        environment:
+            POSTGRES_USER: postgres
+            POSTGRES_PASSWORD: postgres
+            POSTGRES_DB: campaign_manager
+        volumes:
+            - pgdata:/var/lib/postgresql/data
+        healthcheck:
+            test: ['CMD-SHELL', 'pg_isready -U postgres']
+            interval: 5s
+            timeout: 5s
+            retries: 5
+
+    redis:
+        image: redis:7-alpine
+        container_name: campaign-redis
+        volumes:
+            - redisdata:/data
+        healthcheck:
+            test: ['CMD', 'redis-cli', 'ping']
+            interval: 5s
+            timeout: 5s
+            retries: 5
+
+    api:
+        build:
+            context: .
+            dockerfile: Dockerfile.dev
+        container_name: campaign-api
+        ports:
+            - '3002:3002'
+        environment:
+            - NODE_ENV=development
+            - PORT=3002
+            - HOST=0.0.0.0
+            - DATABASE_URL=postgres://postgres:postgres@db:5432/campaign_manager
+            - REDIS_URL=redis://redis:6379
+            - JWT_SECRET=dev-secret-key
+            - JWT_EXPIRES_IN=7d
+            - APP_MODE=api
+        volumes:
+            - .:/app
+            - /app/node_modules
+            - /app/packages/backend/node_modules
+            - /app/packages/frontend/node_modules
+            - /app/packages/shared/node_modules
+        depends_on:
+            db:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+        command: sh -c "npm run db:migrate -w packages/backend && npm run dev -w packages/backend"
+
+    worker:
+        build:
+            context: .
+            dockerfile: Dockerfile.dev
+        deploy:
+            replicas: 2
+        environment:
+            - NODE_ENV=development
+            - DATABASE_URL=postgres://postgres:postgres@db:5432/campaign_manager
+            - REDIS_URL=redis://redis:6379
+            - JWT_SECRET=dev-secret-key
+            - JWT_EXPIRES_IN=7d
+            - APP_MODE=worker
+        volumes:
+            - .:/app
+            - /app/node_modules
+            - /app/packages/backend/node_modules
+            - /app/packages/frontend/node_modules
+            - /app/packages/shared/node_modules
+        depends_on:
+            api:
+                condition: service_started
+            db:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+        command: npm run dev -w packages/backend
+
+    frontend:
+        build:
+            context: .
+            dockerfile: Dockerfile.dev
+        container_name: campaign-frontend
+        ports:
+            - '5174:5173'
+        environment:
+            - VITE_API_URL=http://localhost:3002/api
+        volumes:
+            - .:/app
+            - /app/node_modules
+            - /app/packages/backend/node_modules
+            - /app/packages/frontend/node_modules
+            - /app/packages/shared/node_modules
+        command: npm run dev -w packages/frontend
+volumes:
+    pgdata:
+    redisdata:
